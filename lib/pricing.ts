@@ -1,54 +1,78 @@
-import { PRICING_TIERS } from "@/lib/tiers";
-import { SERVICE_KEYS, SERVICE_LABELS, type MowingFrequency, type PricingTier, type QuoteLineItem, type ServiceKey } from "@/lib/types";
+import { SERVICE_KEYS, SERVICE_LABELS, type MowingFrequency, type QuoteLineItem, type ServiceKey } from "@/lib/types";
 
-const FIRST_TIER = PRICING_TIERS[0];
-const LAST_TIER = PRICING_TIERS[PRICING_TIERS.length - 1];
+const BASE_WEEKLY_MOWING = 53;
+const BASE_FERTILIZING = 65;
+const BASE_AERATION = 65;
+const BASE_POWER_RAKE = 180;
+
+function roundToDollar(value: number): number {
+  return Math.round(value);
+}
 
 export function normalizeSqft(sqft: number): number {
   if (!Number.isFinite(sqft)) {
     return 0;
   }
 
-  return Math.round(sqft);
+  return Math.max(0, Math.round(sqft));
 }
 
-export function findTier(sqft: number): PricingTier {
+export function getExtraBlocks(sqft: number): number {
   const normalizedSqft = normalizeSqft(sqft);
 
-  if (normalizedSqft <= FIRST_TIER.max) {
-    return FIRST_TIER;
+  if (normalizedSqft < 4000) {
+    return 0;
   }
 
-  if (normalizedSqft >= LAST_TIER.min) {
-    return LAST_TIER;
-  }
-
-  return PRICING_TIERS.find((tier) => normalizedSqft >= tier.min && normalizedSqft <= tier.max) ?? LAST_TIER;
+  return Math.floor((normalizedSqft - 4000) / 500) + 1;
 }
 
-export function getServicePrice(tier: PricingTier, service: ServiceKey, mowingFrequency: MowingFrequency): number {
+function getWeeklyMowingPrice(extraBlocks: number): number {
+  return BASE_WEEKLY_MOWING + extraBlocks * 2;
+}
+
+function getBiweeklyMowingPrice(extraBlocks: number): number {
+  return roundToDollar(getWeeklyMowingPrice(extraBlocks) * 1.2);
+}
+
+function getAerationPrice(extraBlocks: number): number {
+  return BASE_AERATION + extraBlocks * 5;
+}
+
+function getFertilizingPrice(extraBlocks: number): number {
+  return BASE_FERTILIZING + extraBlocks * 5;
+}
+
+function getPowerRakePrice(extraBlocks: number): number {
+  if (extraBlocks === 0) {
+    return BASE_POWER_RAKE;
+  }
+
+  return BASE_POWER_RAKE + 30 + (extraBlocks - 1) * 15;
+}
+
+export function getServicePrice(sqft: number, service: ServiceKey, mowingFrequency: MowingFrequency): number {
+  const extraBlocks = getExtraBlocks(sqft);
+
   switch (service) {
     case "mowing":
-      return mowingFrequency === "biweekly" ? tier.mowingBiweekly : tier.mowingWeekly;
+      return mowingFrequency === "biweekly" ? getBiweeklyMowingPrice(extraBlocks) : getWeeklyMowingPrice(extraBlocks);
     case "aeration":
-      return tier.aeration;
+      return getAerationPrice(extraBlocks);
     case "powerRake":
-      return tier.powerRake;
-    case "seed":
-      return tier.seed;
-    case "fertWeed":
-      return tier.fertWeed;
+      return getPowerRakePrice(extraBlocks);
+    case "fertilizing":
+      return getFertilizingPrice(extraBlocks);
     default:
       return 0;
   }
 }
 
 export function calculateQuote(sqft: number, selectedServices: ServiceKey[], mowingFrequency: MowingFrequency) {
-  const tier = findTier(sqft);
   const selectedSet = new Set(selectedServices);
 
   const lineItems: QuoteLineItem[] = SERVICE_KEYS.filter((service) => selectedSet.has(service)).map((service) => {
-    const price = getServicePrice(tier, service, mowingFrequency);
+    const price = getServicePrice(sqft, service, mowingFrequency);
 
     return {
       key: service,
@@ -61,7 +85,7 @@ export function calculateQuote(sqft: number, selectedServices: ServiceKey[], mow
   const total = lineItems.reduce((sum, item) => sum + item.price, 0);
 
   return {
-    tier,
+    extraBlocks: getExtraBlocks(sqft),
     lineItems,
     total,
   };

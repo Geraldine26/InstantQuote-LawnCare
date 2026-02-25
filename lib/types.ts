@@ -1,4 +1,4 @@
-export const SERVICE_KEYS = ["mowing", "aeration", "powerRake", "seed", "fertWeed"] as const;
+export const SERVICE_KEYS = ["mowing", "aeration", "powerRake", "fertilizing"] as const;
 
 export type ServiceKey = (typeof SERVICE_KEYS)[number];
 export type MowingFrequency = "weekly" | "biweekly";
@@ -10,8 +10,7 @@ export interface PricingTier {
   mowingBiweekly: number;
   aeration: number;
   powerRake: number;
-  fertWeed: number;
-  seed: number;
+  fertilizing: number;
 }
 
 export interface QuoteLineItem {
@@ -25,14 +24,12 @@ export const SERVICE_LABELS: Record<ServiceKey, string> = {
   mowing: "Mowing",
   aeration: "Aeration",
   powerRake: "Dethatching",
-  seed: "Overseeding",
-  fertWeed: "Fertilizer & Weed Control",
+  fertilizing: "Fertilizing",
 };
 
 export const SERVICE_DESCRIPTIONS: Record<ServiceKey, string> = {
   mowing: "Routine mowing for a clean and healthy lawn.",
   aeration: "Core aeration to improve water and nutrient flow.",
   powerRake: "Power raking to remove dead turf and loosen thatch.",
-  seed: "Overseeding for thicker, healthier turf coverage.",
-  fertWeed: "Seasonal fertilization plus broadleaf weed control.",
+  fertilizing: "Seasonal fertilization to improve lawn health and growth.",
 };

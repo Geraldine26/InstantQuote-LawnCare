@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import type { MowingFrequency, ServiceKey } from "@/lib/types";
+import { SERVICE_KEYS, type MowingFrequency, type ServiceKey } from "@/lib/types";
 
 export interface LatLngPoint {
   lat: number;
@@ -52,6 +52,25 @@ const initialState = {
   lead: defaultLead,
 };
 
+function normalizePersistedServices(services: unknown): ServiceKey[] {
+  if (!Array.isArray(services)) {
+    return initialState.selectedServices;
+  }
+
+  const validServiceKeys = new Set<ServiceKey>(SERVICE_KEYS);
+  const mapped = services
+    .map((service) => {
+      if (service === "seed" || service === "fertWeed") {
+        return "fertilizing";
+      }
+
+      return service;
+    })
+    .filter((service): service is ServiceKey => typeof service === "string" && validServiceKeys.has(service as ServiceKey));
+
+  return mapped.length > 0 ? [...new Set(mapped)] : initialState.selectedServices;
+}
+
 export const useQuoteStore = create<QuoteState>()(
   persist(
     (set, get) => ({
@@ -101,7 +120,17 @@ export const useQuoteStore = create<QuoteState>()(
     }),
     {
       name: "instant-quote-store",
+      version: 2,
       storage: createJSONStorage(() => localStorage),
+      migrate: (persistedState) => {
+        const state = persistedState as Partial<QuoteState> | undefined;
+
+        return {
+          ...initialState,
+          ...state,
+          selectedServices: normalizePersistedServices(state?.selectedServices),
+        };
+      },
       partialize: (state) => ({
         address: state.address,
         center: state.center,

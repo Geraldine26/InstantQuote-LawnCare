@@ -67,9 +67,6 @@ export default function MeasurePage() {
   };
 
   const handleStartOver = () => {
-    setPolygons([]);
-    setSqft(0);
-
     if (typeof window !== "undefined") {
       sessionStorage.setItem(TOTAL_SQFT_STORAGE_KEY, "0");
       sessionStorage.removeItem(FINAL_QUOTE_STORAGE_KEY);
