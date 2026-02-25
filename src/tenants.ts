@@ -11,13 +11,17 @@ export interface TenantConfig {
   allowedDomains: string[];
 }
 
+const defaultOwnerEmail = process.env.OWNER_EMAIL ?? "[[OWNER_EMAIL]]";
+const defaultPushoverBcc = process.env.PUSHOVER_BCC_EMAIL;
+
 const demoTenant: TenantConfig = {
   slug: "demo",
   brandName: "Instant Lawn Quote",
   tagline: "Get an exact lawn care price in minutes.",
   primaryHex: "#16a34a",
   bgTintHex: "#eafaf1",
-  ownerEmail: "[[OWNER_EMAIL]]",
+  ownerEmail: defaultOwnerEmail,
+  ...(defaultPushoverBcc ? { pushoverBcc: defaultPushoverBcc } : {}),
   supportPhone: "+18016516326",
   allowedDomains: ["http://localhost:3000", "http://127.0.0.1:3000"],
 };
@@ -32,6 +36,15 @@ export const TENANT_HOST_MAP: Record<string, TenantConfig> = {
       "https://www.demo.instant-quote.online",
       "https://example-wordpress-site.com",
     ],
+  },
+  "instant-quote-lawn-care.vercel.app": {
+    ...demoTenant,
+    slug: "instant-quote-vercel",
+    brandName: "Instant Quote Lawn Care",
+    tagline: "Fast lawn pricing in minutes.",
+    primaryHex: "#0f766e",
+    bgTintHex: "#ecfeff",
+    allowedDomains: ["https://instant-quote-lawn-care.vercel.app"],
   },
 };
 
