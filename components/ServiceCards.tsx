@@ -48,7 +48,7 @@ export function ServiceCards({
                         <button
                           aria-label="Set mowing to weekly"
                           className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                            mowingFrequency === "weekly" ? "bg-slate-900 text-white" : "text-slate-700"
+                            mowingFrequency === "weekly" ? "bg-brand text-white" : "text-slate-700"
                           }`}
                           onClick={() => onMowingFrequencyChange("weekly")}
                           type="button"
@@ -58,7 +58,7 @@ export function ServiceCards({
                         <button
                           aria-label="Set mowing to biweekly"
                           className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                            mowingFrequency === "biweekly" ? "bg-slate-900 text-white" : "text-slate-700"
+                            mowingFrequency === "biweekly" ? "bg-brand text-white" : "text-slate-700"
                           }`}
                           onClick={() => onMowingFrequencyChange("biweekly")}
                           type="button"
@@ -103,7 +103,7 @@ export function ServiceCards({
                     <p className="text-base font-bold text-slate-900">{formatCurrency(previewPrice)}</p>
                     <button
                       aria-label={`Add ${SERVICE_LABELS[service]} to visit`}
-                      className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white transition hover:bg-slate-700"
+                      className="rounded-lg bg-brand px-3 py-2 text-xs font-semibold text-white transition hover:bg-brand/90"
                       onClick={() => onAdd(service)}
                       type="button"
                     >
@@ -117,9 +117,9 @@ export function ServiceCards({
         )}
       </section>
 
-      <section aria-label="Estimated total" className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-        <p className="text-sm font-medium uppercase tracking-wide text-emerald-800">Estimated Total</p>
-        <p className="mt-1 text-3xl font-bold text-emerald-700">{formatCurrency(quote.total)}</p>
+      <section aria-label="Estimated total" className="rounded-2xl border border-brand/25 bg-brand/10 p-5">
+        <p className="text-sm font-medium uppercase tracking-wide text-brand-dark">Estimated Total</p>
+        <p className="mt-1 text-3xl font-bold text-brand-dark">{formatCurrency(quote.total)}</p>
       </section>
     </div>
   );

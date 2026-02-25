@@ -7,6 +7,7 @@ import type { LatLngPoint } from "@/store/quoteStore";
 
 const DEFAULT_CENTER = { lat: 40.7608, lng: -111.891 };
 const SQ_METERS_TO_SQFT = 10.7639104;
+const DEFAULT_BRAND_COLOR = "#16a34a";
 
 interface MapDrawerProps {
   address: string;
@@ -29,6 +30,15 @@ export function MapDrawer({ address, initialCenter, initialPolygons, onAreaChang
   const [error, setError] = useState<string | null>(null);
 
   const fallbackCenter = useMemo(() => initialCenter ?? DEFAULT_CENTER, [initialCenter]);
+
+  const getBrandColor = useCallback(() => {
+    if (typeof window === "undefined") {
+      return DEFAULT_BRAND_COLOR;
+    }
+
+    const cssBrand = window.getComputedStyle(document.body).getPropertyValue("--brand").trim();
+    return cssBrand || DEFAULT_BRAND_COLOR;
+  }, []);
 
   const serializePolygons = useCallback((): LatLngPoint[][] => {
     return polygonsRef.current.map((polygon) =>
@@ -114,6 +124,7 @@ export function MapDrawer({ address, initialCenter, initialPolygons, onAreaChang
 
         mapRef.current = map;
         geocoderRef.current = new googleApi.maps.Geocoder();
+        const brandColor = getBrandColor();
 
         const drawingManager = new googleApi.maps.drawing.DrawingManager({
           drawingControl: true,
@@ -122,9 +133,9 @@ export function MapDrawer({ address, initialCenter, initialPolygons, onAreaChang
             position: googleApi.maps.ControlPosition.TOP_CENTER,
           },
           polygonOptions: {
-            fillColor: "#22c55e",
+            fillColor: brandColor,
             fillOpacity: 0.25,
-            strokeColor: "#16a34a",
+            strokeColor: brandColor,
             strokeWeight: 2,
             clickable: true,
             editable: true,
@@ -148,9 +159,9 @@ export function MapDrawer({ address, initialCenter, initialPolygons, onAreaChang
             const polygon = new googleApi.maps.Polygon({
               paths: path,
               map,
-              fillColor: "#22c55e",
+              fillColor: brandColor,
               fillOpacity: 0.25,
-              strokeColor: "#16a34a",
+              strokeColor: brandColor,
               strokeWeight: 2,
               clickable: true,
               editable: true,
@@ -182,7 +193,7 @@ export function MapDrawer({ address, initialCenter, initialPolygons, onAreaChang
       mapRef.current = null;
       geocoderRef.current = null;
     };
-  }, [attachPolygon, fallbackCenter, initialPolygons]);
+  }, [attachPolygon, fallbackCenter, getBrandColor, initialPolygons]);
 
   useEffect(() => {
     if (!address || !mapRef.current || !geocoderRef.current) {
@@ -207,7 +218,7 @@ export function MapDrawer({ address, initialCenter, initialPolygons, onAreaChang
         <button
           aria-label="Show satellite map"
           className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-            mapType === "satellite" ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-700"
+            mapType === "satellite" ? "bg-brand text-white" : "bg-slate-200 text-slate-700"
           }`}
           onClick={() => switchMapType("satellite")}
           type="button"
@@ -217,7 +228,7 @@ export function MapDrawer({ address, initialCenter, initialPolygons, onAreaChang
         <button
           aria-label="Show map view"
           className={`rounded-lg px-3 py-2 text-sm font-medium transition ${
-            mapType === "roadmap" ? "bg-slate-900 text-white" : "bg-slate-200 text-slate-700"
+            mapType === "roadmap" ? "bg-brand text-white" : "bg-slate-200 text-slate-700"
           }`}
           onClick={() => switchMapType("roadmap")}
           type="button"

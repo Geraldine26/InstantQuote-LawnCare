@@ -58,7 +58,7 @@ export default function MeasurePage() {
         </button>
         <button
           aria-label="Go to services step"
-          className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-60"
+          className="rounded-xl bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
           disabled={sqft <= 0}
           onClick={() => router.push("/services")}
           type="button"

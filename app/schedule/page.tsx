@@ -45,7 +45,7 @@ export default function SchedulePage() {
         <h1 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">Schedule your service</h1>
         <p className="mt-2 text-sm text-slate-600">Submit your details and we will send this quote to you by email.</p>
 
-        <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mt-6 rounded-xl border border-brand/20 bg-brand/10 p-4">
           <p className="text-sm text-slate-600">Address</p>
           <p className="font-semibold text-slate-900">{address}</p>
           <p className="mt-2 text-sm text-slate-600">

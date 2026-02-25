@@ -172,14 +172,14 @@ export function LeadForm({ onSuccess }: LeadFormProps) {
         </div>
       </div>
 
-      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-        <p className="text-sm text-emerald-900">Estimated Total</p>
-        <p className="text-2xl font-bold text-emerald-700">{formatCurrency(quote.total)}</p>
+      <div className="rounded-2xl border border-brand/25 bg-brand/10 p-4">
+        <p className="text-sm text-brand-dark">Estimated Total</p>
+        <p className="text-2xl font-bold text-brand-dark">{formatCurrency(quote.total)}</p>
       </div>
 
       <button
         aria-label="Submit quote request"
-        className="w-full rounded-xl bg-slate-900 px-5 py-3 text-base font-semibold text-white transition hover:bg-slate-700 disabled:opacity-60"
+        className="w-full rounded-xl bg-brand px-5 py-3 text-base font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
         disabled={submitState === "submitting"}
         type="submit"
       >
@@ -187,7 +187,7 @@ export function LeadForm({ onSuccess }: LeadFormProps) {
       </button>
 
       {message && (
-        <p className={`text-sm ${submitState === "success" ? "text-emerald-700" : "text-rose-700"}`}>{message}</p>
+        <p className={`text-sm ${submitState === "success" ? "text-brand-dark" : "text-rose-700"}`}>{message}</p>
       )}
     </form>
   );

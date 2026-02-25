@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { ServiceCheckboxes } from "@/components/ServiceCheckboxes";
 import { useQuoteStore } from "@/store/quoteStore";
+import { useTenant } from "@/src/components/TenantProvider";
 
 export default function LandingPage() {
   const router = useRouter();
+  const tenant = useTenant();
   const { address, selectedServices, setAddress, setCenter, toggleService } = useQuoteStore((state) => ({
     address: state.address,
     selectedServices: state.selectedServices,
@@ -39,10 +41,10 @@ export default function LandingPage() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-10 sm:py-16">
       <section className="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-soft sm:p-10">
-        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-brand-dark">Instant Lawn Quote</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-brand-dark">{tenant.brandName}</p>
         <h1 className="mt-3 text-4xl font-extrabold leading-tight text-slate-900 sm:text-5xl">Get an exact lawn care price in minutes.</h1>
         <p className="mt-4 max-w-2xl text-base text-slate-600 sm:text-lg">
-          Enter your address, choose your services, then measure your lawn on the map to unlock your instant quote.
+          {tenant.tagline ?? "Enter your address, choose your services, then measure your lawn on the map to unlock your instant quote."}
         </p>
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -64,7 +66,7 @@ export default function LandingPage() {
 
           <button
             aria-label="Go to map measurement step"
-            className="w-full rounded-xl bg-slate-900 px-6 py-3 text-base font-semibold text-white transition hover:bg-slate-700"
+            className="w-full rounded-xl bg-brand px-6 py-3 text-base font-semibold text-white transition hover:bg-brand/90"
             type="submit"
           >
             Get My Instant Price
