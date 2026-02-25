@@ -11,8 +11,6 @@ export interface TenantConfig {
   allowedDomains: string[];
 }
 
-const defaultOwnerEmail = process.env.OWNER_EMAIL ?? "[[OWNER_EMAIL]]";
-const defaultPushoverBcc = process.env.PUSHOVER_BCC_EMAIL;
 const vercelAppOrigin = "https://instant-quote-lawn-care.vercel.app";
 
 export const TENANT_SLUG_MAP: Record<string, TenantConfig> = {
@@ -22,8 +20,8 @@ export const TENANT_SLUG_MAP: Record<string, TenantConfig> = {
     tagline: "Get an exact lawn care price in minutes.",
     primaryHex: "#16a34a",
     bgTintHex: "#eafaf1",
-    ownerEmail: defaultOwnerEmail,
-    ...(defaultPushoverBcc ? { pushoverBcc: defaultPushoverBcc } : {}),
+    ownerEmail: "demo-owner@example.com",
+    pushoverBcc: "demo-pushover@example.com",
     supportPhone: "+18016516326",
     allowedDomains: ["http://localhost:3000", "http://127.0.0.1:3000"],
   },
@@ -33,12 +31,8 @@ export const TENANT_SLUG_MAP: Record<string, TenantConfig> = {
     tagline: "Fast lawn pricing in minutes.",
     primaryHex: "#16a34a",
     bgTintHex: "#ecfeff",
-    ownerEmail: process.env.GREENLAWN_OWNER_EMAIL ?? "greenlawn-owner@example.com",
-    ...(process.env.GREENLAWN_PUSHOVER_BCC_EMAIL
-      ? { pushoverBcc: process.env.GREENLAWN_PUSHOVER_BCC_EMAIL }
-      : defaultPushoverBcc
-        ? { pushoverBcc: defaultPushoverBcc }
-        : {}),
+    ownerEmail: "greenlawn-owner@example.com",
+    pushoverBcc: "greenlawn-pushover@example.com",
     supportPhone: "+18016516326",
     allowedDomains: [vercelAppOrigin, "https://greenlawnutah.com", "https://www.greenlawnutah.com"],
   },
@@ -48,12 +42,8 @@ export const TENANT_SLUG_MAP: Record<string, TenantConfig> = {
     tagline: "Neighborhood lawn service made simple.",
     primaryHex: "#ea580c",
     bgTintHex: "#fff7ed",
-    ownerEmail: process.env.ACME_OWNER_EMAIL ?? "acme-owner@example.com",
-    ...(process.env.ACME_PUSHOVER_BCC_EMAIL
-      ? { pushoverBcc: process.env.ACME_PUSHOVER_BCC_EMAIL }
-      : defaultPushoverBcc
-        ? { pushoverBcc: defaultPushoverBcc }
-        : {}),
+    ownerEmail: "acme-owner@example.com",
+    pushoverBcc: "acme-pushover@example.com",
     supportPhone: "+18016516326",
     allowedDomains: [vercelAppOrigin, "https://acmelawncare.com", "https://www.acmelawncare.com"],
   },
@@ -63,12 +53,8 @@ export const TENANT_SLUG_MAP: Record<string, TenantConfig> = {
     tagline: "Precision treatments for stronger turf.",
     primaryHex: "#0f766e",
     bgTintHex: "#ecfeff",
-    ownerEmail: process.env.SERVCROPS_OWNER_EMAIL ?? "servcrops-owner@example.com",
-    ...(process.env.SERVCROPS_PUSHOVER_BCC_EMAIL
-      ? { pushoverBcc: process.env.SERVCROPS_PUSHOVER_BCC_EMAIL }
-      : defaultPushoverBcc
-        ? { pushoverBcc: defaultPushoverBcc }
-        : {}),
+    ownerEmail: "servcrops-owner@example.com",
+    pushoverBcc: "servcrops-pushover@example.com",
     supportPhone: "+18016516326",
     allowedDomains: [vercelAppOrigin, "https://servcrops.com", "https://www.servcrops.com"],
   },
