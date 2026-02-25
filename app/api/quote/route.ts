@@ -36,7 +36,7 @@ const rateLimitStore = new Map<string, RateLimitState>();
 let rateLimitTick = 0;
 let sendGridConfigured = false;
 
-const serviceKeyEnum = z.enum(["mowing", "aeration", "powerRake", "seed", "fertWeed"]);
+const serviceKeyEnum = z.enum(["mowing", "aeration", "powerRake", "fertilizing"]);
 
 const serviceItemSchema = z
   .object({

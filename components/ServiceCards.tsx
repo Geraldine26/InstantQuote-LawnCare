@@ -1,6 +1,6 @@
 "use client";
 
-import { calculateQuote, findTier, formatCurrency, getServicePrice } from "@/lib/pricing";
+import { calculateQuote, formatCurrency, getServicePrice } from "@/lib/pricing";
 import { SERVICE_DESCRIPTIONS, SERVICE_KEYS, SERVICE_LABELS, type MowingFrequency, type ServiceKey } from "@/lib/types";
 
 interface ServiceCardsProps {
@@ -23,7 +23,6 @@ export function ServiceCards({
   const quote = calculateQuote(sqft, selectedServices, mowingFrequency);
   const selectedSet = new Set(selectedServices);
   const recommended = SERVICE_KEYS.filter((service) => !selectedSet.has(service));
-  const tier = findTier(sqft);
 
   return (
     <div className="space-y-8">
@@ -94,7 +93,7 @@ export function ServiceCards({
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {recommended.map((service) => {
-              const previewPrice = getServicePrice(tier, service, mowingFrequency);
+              const previewPrice = getServicePrice(sqft, service, mowingFrequency);
               return (
                 <article key={service} className="rounded-2xl border border-slate-200 bg-white p-4">
                   <h3 className="text-base font-semibold text-slate-900">{SERVICE_LABELS[service]}</h3>
