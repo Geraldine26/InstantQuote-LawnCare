@@ -14,20 +14,32 @@ interface AddressAutocompleteProps {
 
 export function AddressAutocomplete({ value, onChange, onSelect, id = "address", required = false }: AddressAutocompleteProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const placeChangedListenerRef = useRef<google.maps.MapsEventListener | null>(null);
+  const initializedRef = useRef(false);
+
+  const onChangeRef = useRef(onChange);
+  const onSelectRef = useRef(onSelect);
+
   const [mapsError, setMapsError] = useState<string | null>(null);
 
   useEffect(() => {
-    let mounted = true;
+    onChangeRef.current = onChange;
+    onSelectRef.current = onSelect;
+  }, [onChange, onSelect]);
+
+  useEffect(() => {
+    let cancelled = false;
 
     async function initAutocomplete() {
-      if (!inputRef.current || !hasGoogleMapsApiKey()) {
+      if (initializedRef.current || !inputRef.current || !hasGoogleMapsApiKey()) {
         return;
       }
 
       try {
         const google = await loadGoogleMaps();
 
-        if (!mounted || !inputRef.current) {
+        if (cancelled || !inputRef.current) {
           return;
         }
 
@@ -36,9 +48,12 @@ export function AddressAutocomplete({ value, onChange, onSelect, id = "address",
           types: ["address"],
         });
 
-        autocomplete.addListener("place_changed", () => {
+        autocompleteRef.current = autocomplete;
+        initializedRef.current = true;
+
+        placeChangedListenerRef.current = autocomplete.addListener("place_changed", () => {
           const place = autocomplete.getPlace();
-          const address = place.formatted_address ?? inputRef.current?.value ?? "";
+          const selectedAddress = place.formatted_address ?? inputRef.current?.value ?? "";
 
           const center = place.geometry?.location
             ? {
@@ -47,8 +62,8 @@ export function AddressAutocomplete({ value, onChange, onSelect, id = "address",
               }
             : null;
 
-          onChange(address);
-          onSelect({ address, center });
+          onChangeRef.current(selectedAddress);
+          onSelectRef.current({ address: selectedAddress, center });
         });
       } catch (error) {
         setMapsError(error instanceof Error ? error.message : "Failed to load Google Maps.");
@@ -58,9 +73,18 @@ export function AddressAutocomplete({ value, onChange, onSelect, id = "address",
     void initAutocomplete();
 
     return () => {
-      mounted = false;
+      cancelled = true;
     };
-  }, [onChange, onSelect]);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      placeChangedListenerRef.current?.remove();
+      placeChangedListenerRef.current = null;
+      autocompleteRef.current = null;
+      initializedRef.current = false;
+    };
+  }, []);
 
   return (
     <div className="space-y-2">
@@ -73,7 +97,7 @@ export function AddressAutocomplete({ value, onChange, onSelect, id = "address",
         aria-label="Property address"
         autoComplete="street-address"
         className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-900 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => onChangeRef.current(event.target.value)}
         placeholder="Start typing your address"
         required={required}
         value={value}

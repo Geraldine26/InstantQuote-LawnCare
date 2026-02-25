@@ -1,18 +1,34 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { ServiceCheckboxes } from "@/components/ServiceCheckboxes";
+import { clearQuoteSessionStorage, readStep1SessionData, saveStep1SessionData } from "@/lib/quoteSession";
 import { useQuoteStore } from "@/store/quoteStore";
 import { useTenant, useTenantRouting } from "@/src/components/TenantProvider";
 
+function normalizeAddress(value: string) {
+  return value.trim().toLowerCase();
+}
+
 export default function LandingPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const tenant = useTenant();
   const { withTenantPath } = useTenantRouting();
-  const { address, selectedServices, setAddress, setCenter, setPolygons, setSqft, toggleService } = useQuoteStore((state) => ({
+
+  const {
+    address,
+    selectedServices,
+    setAddress,
+    setCenter,
+    setPolygons,
+    setSqft,
+    toggleService,
+    resetQuote,
+  } = useQuoteStore((state) => ({
     address: state.address,
     selectedServices: state.selectedServices,
     setAddress: state.setAddress,
@@ -20,19 +36,40 @@ export default function LandingPage() {
     setPolygons: state.setPolygons,
     setSqft: state.setSqft,
     toggleService: state.toggleService,
+    resetQuote: state.resetQuote,
   }));
 
   const [error, setError] = useState<string | null>(null);
+  const initializedRef = useRef(false);
 
-  const resetMeasurement = () => {
+  const continueQuote = searchParams.get("continue") === "1";
+
+  useEffect(() => {
+    if (initializedRef.current) {
+      return;
+    }
+
+    initializedRef.current = true;
+
+    if (continueQuote) {
+      const stored = readStep1SessionData();
+
+      if (stored && !address.trim()) {
+        setAddress(stored.address);
+        setCenter(stored.center);
+      }
+
+      return;
+    }
+
+    resetQuote();
+    clearQuoteSessionStorage();
+  }, [address, continueQuote, resetQuote, setAddress, setCenter]);
+
+  const resetMeasurementState = () => {
     setPolygons([]);
     setSqft(0);
-
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("gl_quote_total_sqft", "0");
-      sessionStorage.removeItem("gl_final_quote");
-      sessionStorage.removeItem("gl_measure_address");
-    }
+    clearQuoteSessionStorage();
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -64,18 +101,25 @@ export default function LandingPage() {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <AddressAutocomplete
             onChange={(nextAddress) => {
-              if (nextAddress.trim() !== address.trim()) {
-                resetMeasurement();
+              if (normalizeAddress(nextAddress) !== normalizeAddress(address)) {
+                resetMeasurementState();
+                setCenter(null);
               }
+
               setAddress(nextAddress);
               setError(null);
             }}
-            onSelect={({ address: selectedAddress, center }) => {
-              if (selectedAddress.trim() !== address.trim()) {
-                resetMeasurement();
+            onSelect={({ address: selectedAddress, center: selectedCenter }) => {
+              if (normalizeAddress(selectedAddress) !== normalizeAddress(address)) {
+                resetMeasurementState();
               }
+
               setAddress(selectedAddress);
-              setCenter(center);
+              setCenter(selectedCenter);
+              saveStep1SessionData({
+                address: selectedAddress,
+                center: selectedCenter,
+              });
               setError(null);
             }}
             required
