@@ -1,12 +1,54 @@
-import { DEMO_TENANT, TENANT_HOST_MAP, type TenantConfig } from "@/src/tenants";
+import { DEMO_TENANT, TENANT_HOST_MAP, TENANT_SLUG_MAP, type TenantConfig } from "@/src/tenants";
+
+interface ResolveTenantInput {
+  host: string;
+  slug?: string | null;
+}
 
 export function stripPortFromHost(host: string): string {
   return host.trim().toLowerCase().replace(/:\d+$/, "");
 }
 
+export function normalizeTenantSlug(slug: string): string {
+  return slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+}
+
+export function extractTenantSlugFromPath(pathname: string): string | null {
+  const match = pathname.match(/^\/t\/([^\/]+)(?:\/|$)/i);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const normalizedSlug = normalizeTenantSlug(decodeURIComponent(match[1]));
+  return normalizedSlug || null;
+}
+
+export function stripTenantPrefix(pathname: string): string {
+  const stripped = pathname.replace(/^\/t\/[^\/]+/i, "");
+  return stripped === "" ? "/" : stripped;
+}
+
 export function resolveTenantFromHost(host: string): TenantConfig {
   const normalizedHost = stripPortFromHost(host);
   return TENANT_HOST_MAP[normalizedHost] ?? DEMO_TENANT;
+}
+
+export function resolveTenantFromSlug(slug: string): TenantConfig | null {
+  const normalizedSlug = normalizeTenantSlug(slug);
+  if (!normalizedSlug) {
+    return null;
+  }
+
+  return TENANT_SLUG_MAP[normalizedSlug] ?? null;
+}
+
+export function resolveTenant(input: ResolveTenantInput): TenantConfig {
+  const bySlug = input.slug ? resolveTenantFromSlug(input.slug) : null;
+  if (bySlug) {
+    return bySlug;
+  }
+
+  return resolveTenantFromHost(input.host);
 }
 
 export function getRequestHost(headers: Headers): string {

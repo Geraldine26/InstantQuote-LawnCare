@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { ServiceCheckboxes } from "@/components/ServiceCheckboxes";
 import { useQuoteStore } from "@/store/quoteStore";
-import { useTenant } from "@/src/components/TenantProvider";
+import { useTenant, useTenantRouting } from "@/src/components/TenantProvider";
 
 export default function LandingPage() {
   const router = useRouter();
   const tenant = useTenant();
+  const { withTenantPath } = useTenantRouting();
   const { address, selectedServices, setAddress, setCenter, toggleService } = useQuoteStore((state) => ({
     address: state.address,
     selectedServices: state.selectedServices,
@@ -35,7 +36,7 @@ export default function LandingPage() {
     }
 
     setError(null);
-    router.push("/measure");
+    router.push(withTenantPath("/measure"));
   };
 
   return (

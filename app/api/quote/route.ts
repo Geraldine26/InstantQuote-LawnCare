@@ -6,7 +6,14 @@ import type { MailDataRequired } from "@sendgrid/helpers/classes/mail";
 import { buildQuoteEmailHtml } from "@/lib/emailTemplate";
 import { calculateQuote } from "@/lib/pricing";
 import type { ServiceKey } from "@/lib/types";
-import { getRequestHost, isAllowedEmbedOrigin, resolveTenantFromHost } from "@/src/lib/tenant";
+import {
+  extractTenantSlugFromPath,
+  getRequestHost,
+  isAllowedEmbedOrigin,
+  resolveTenant,
+  resolveTenantFromSlug,
+} from "@/src/lib/tenant";
+import type { TenantConfig } from "@/src/lib/tenant";
 
 export const runtime = "nodejs";
 
@@ -220,8 +227,31 @@ function getHeaderOrigin(value: string | null): string | null {
   }
 }
 
-function isRequestOriginAllowed(request: NextRequest, host: string) {
-  const tenant = resolveTenantFromHost(host);
+function getTenantSlugFromRequest(request: NextRequest): string | null {
+  const slugFromHeader = request.headers.get("x-tenant-slug");
+  if (slugFromHeader && resolveTenantFromSlug(slugFromHeader)) {
+    return slugFromHeader;
+  }
+
+  const slugFromPath = extractTenantSlugFromPath(request.nextUrl.pathname);
+  if (slugFromPath) {
+    return slugFromPath;
+  }
+
+  const referer = request.headers.get("referer");
+  if (!referer) {
+    return null;
+  }
+
+  try {
+    const refererUrl = new URL(referer);
+    return extractTenantSlugFromPath(refererUrl.pathname);
+  } catch {
+    return null;
+  }
+}
+
+function isRequestOriginAllowed(request: NextRequest, tenant: TenantConfig) {
 
   const originHeader = request.headers.get("origin");
   const refererHeader = request.headers.get("referer");
@@ -310,10 +340,11 @@ function badRequest(error: string) {
 export async function POST(request: NextRequest) {
   const timestamp = new Date().toISOString();
   const host = getRequestHost(request.headers);
-  const tenant = resolveTenantFromHost(host);
+  const tenantSlug = getTenantSlugFromRequest(request);
+  const tenant = resolveTenant({ host, slug: tenantSlug });
   const ip = getClientIp(request);
 
-  if (!isRequestOriginAllowed(request, host)) {
+  if (!isRequestOriginAllowed(request, tenant)) {
     console.error(
       JSON.stringify({
         event: "quote_origin_rejected",

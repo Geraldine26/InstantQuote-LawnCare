@@ -4,6 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 
 import { calculateQuote, formatCurrency } from "@/lib/pricing";
 import { useQuoteStore } from "@/store/quoteStore";
+import { useTenantRouting } from "@/src/components/TenantProvider";
 
 interface LeadFormProps {
   onSuccess?: () => void;
@@ -12,6 +13,7 @@ interface LeadFormProps {
 type SubmitState = "idle" | "submitting" | "success" | "error";
 
 export function LeadForm({ onSuccess }: LeadFormProps) {
+  const { withTenantPath } = useTenantRouting();
   const {
     address,
     sqft,
@@ -64,7 +66,8 @@ export function LeadForm({ onSuccess }: LeadFormProps) {
     };
 
     try {
-      const response = await fetch("/api/quote", {
+      const endpoint = withTenantPath("/api/quote");
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "content-type": "application/json",

@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { LeadForm } from "@/components/LeadForm";
 import { calculateQuote, formatCurrency } from "@/lib/pricing";
 import { useQuoteStore } from "@/store/quoteStore";
+import { useTenantRouting } from "@/src/components/TenantProvider";
 
 export default function SchedulePage() {
   const router = useRouter();
+  const { withTenantPath } = useTenantRouting();
   const { address, sqft, selectedServices, mowingFrequency } = useQuoteStore((state) => ({
     address: state.address,
     sqft: state.sqft,
@@ -18,19 +20,19 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (!address) {
-      router.replace("/");
+      router.replace(withTenantPath("/"));
       return;
     }
 
     if (sqft <= 0) {
-      router.replace("/measure");
+      router.replace(withTenantPath("/measure"));
       return;
     }
 
     if (selectedServices.length === 0) {
-      router.replace("/services");
+      router.replace(withTenantPath("/services"));
     }
-  }, [address, router, selectedServices.length, sqft]);
+  }, [address, router, selectedServices.length, sqft, withTenantPath]);
 
   if (!address || sqft <= 0 || selectedServices.length === 0) {
     return null;

@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 
 import { MapDrawer } from "@/components/MapDrawer";
 import { useQuoteStore } from "@/store/quoteStore";
+import { useTenantRouting } from "@/src/components/TenantProvider";
 
 export default function MeasurePage() {
   const router = useRouter();
+  const { withTenantPath } = useTenantRouting();
   const { address, center, polygons, sqft, setSqft, setPolygons, resetQuote } = useQuoteStore((state) => ({
     address: state.address,
     center: state.center,
@@ -20,9 +22,9 @@ export default function MeasurePage() {
 
   useEffect(() => {
     if (!address) {
-      router.replace("/");
+      router.replace(withTenantPath("/"));
     }
-  }, [address, router]);
+  }, [address, router, withTenantPath]);
 
   if (!address) {
     return null;
@@ -50,7 +52,7 @@ export default function MeasurePage() {
           className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
           onClick={() => {
             resetQuote();
-            router.push("/");
+            router.push(withTenantPath("/"));
           }}
           type="button"
         >
@@ -60,7 +62,7 @@ export default function MeasurePage() {
           aria-label="Go to services step"
           className="rounded-xl bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
           disabled={sqft <= 0}
-          onClick={() => router.push("/services")}
+          onClick={() => router.push(withTenantPath("/services"))}
           type="button"
         >
           Get Price Now

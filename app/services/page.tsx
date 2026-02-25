@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 import { ServiceCards } from "@/components/ServiceCards";
 import { calculateQuote } from "@/lib/pricing";
 import { useQuoteStore } from "@/store/quoteStore";
+import { useTenantRouting } from "@/src/components/TenantProvider";
 
 export default function ServicesPage() {
   const router = useRouter();
+  const { withTenantPath } = useTenantRouting();
   const { address, sqft, selectedServices, mowingFrequency, addService, removeService, setMowingFrequency } = useQuoteStore((state) => ({
     address: state.address,
     sqft: state.sqft,
@@ -23,14 +25,14 @@ export default function ServicesPage() {
 
   useEffect(() => {
     if (!address) {
-      router.replace("/");
+      router.replace(withTenantPath("/"));
       return;
     }
 
     if (sqft <= 0) {
-      router.replace("/measure");
+      router.replace(withTenantPath("/measure"));
     }
-  }, [address, router, sqft]);
+  }, [address, router, sqft, withTenantPath]);
 
   if (!address || sqft <= 0) {
     return null;
@@ -57,7 +59,7 @@ export default function ServicesPage() {
         <button
           aria-label="Back to measurement step"
           className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-          onClick={() => router.push("/measure")}
+          onClick={() => router.push(withTenantPath("/measure"))}
           type="button"
         >
           Back
@@ -66,7 +68,7 @@ export default function ServicesPage() {
           aria-label="Go to schedule step"
           className="rounded-xl bg-brand px-5 py-3 text-sm font-semibold text-white transition hover:bg-brand/90 disabled:opacity-60"
           disabled={quote.lineItems.length === 0}
-          onClick={() => router.push("/schedule")}
+          onClick={() => router.push(withTenantPath("/schedule"))}
           type="button"
         >
           Schedule My Service
