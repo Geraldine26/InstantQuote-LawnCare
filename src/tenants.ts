@@ -40,9 +40,9 @@ export const TENANT_HOST_MAP: Record<string, TenantConfig> = {
   "instant-quote-lawn-care.vercel.app": {
     ...demoTenant,
     slug: "instant-quote-vercel",
-    brandName: "Instant Quote Lawn Care",
+    brandName: "Green Lawn Utah",
     tagline: "Fast lawn pricing in minutes.",
-    primaryHex: "#0f766e",
+    primaryHex: "#FF7A00",
     bgTintHex: "#ecfeff",
     allowedDomains: ["https://instant-quote-lawn-care.vercel.app"],
   },
