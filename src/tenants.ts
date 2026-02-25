@@ -46,6 +46,17 @@ export const TENANT_HOST_MAP: Record<string, TenantConfig> = {
     bgTintHex: "#ecfeff",
     allowedDomains: ["https://instant-quote-lawn-care.vercel.app"],
   },
+  "tu-proyecto.vercel.app": {
+    ...demoTenant,
+    slug: "prod",
+    brandName: "Tu Marca",
+    tagline: "Tu tagline real",
+    primaryHex: "#0f766e",
+    bgTintHex: "#ecfeff",
+    ownerEmail: "tu-correo@dominio.com",
+    supportPhone: "+18016516326",
+    allowedDomains: ["https://tu-proyecto.vercel.app"], // temporal mientras no haya WP/dominio
+  },
 };
 
 export const DEMO_TENANT = demoTenant;
