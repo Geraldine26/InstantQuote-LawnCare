@@ -9,6 +9,7 @@ const DEFAULT_CENTER = { lat: 40.7608, lng: -111.891 };
 const DEFAULT_BRAND_COLOR = "#16a34a";
 const SQ_METERS_TO_SQFT = 10.7639104;
 const TOTAL_SQFT_STORAGE_KEY = "gl_quote_total_sqft";
+const FINAL_QUOTE_STORAGE_KEY = "gl_final_quote";
 
 interface MapDrawerProps {
   address: string;
@@ -36,10 +37,12 @@ export function MapDrawer({
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const drawingManagerRef = useRef<google.maps.drawing.DrawingManager | null>(null);
   const polygonsRef = useRef<google.maps.Polygon[]>([]);
+
   const polygonListenersRef = useRef<Map<google.maps.Polygon, google.maps.MapsEventListener[]>>(new Map());
-  const globalListenersRef = useRef<google.maps.MapsEventListener[]>([]);
+  const mapListenersRef = useRef<google.maps.MapsEventListener[]>([]);
   const initializedRef = useRef(false);
   const mountedRef = useRef(false);
+  const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onAreaChangeRef = useRef(onAreaChange);
   const onPolygonsChangeRef = useRef(onPolygonsChange);
@@ -49,13 +52,12 @@ export function MapDrawer({
   const [mapType, setMapType] = useState<"satellite" | "roadmap">("satellite");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [totalSqft, setTotalSqft] = useState(Math.max(0, Math.round(initialSqft)));
+  const [totalSqft, setTotalSqft] = useState(initialPolygons.length > 0 ? Math.max(0, Math.round(initialSqft)) : 0);
   const [polygonCount, setPolygonCount] = useState(initialPolygons.length);
   const [pillPulseKey, setPillPulseKey] = useState(0);
 
   const initialCenterRef = useRef(initialCenter ?? DEFAULT_CENTER);
   const initialPolygonsRef = useRef(initialPolygons);
-  const initialSqftRef = useRef(initialSqft);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -98,56 +100,15 @@ export function MapDrawer({
     );
   }, []);
 
-  const recalculateTotalArea = useCallback(
-    (shouldPulse: boolean) => {
-      const googleApi = window.google;
+  const enforceFlatMap = useCallback(() => {
+    if (!mapRef.current) {
+      return;
+    }
 
-      if (!googleApi?.maps?.geometry) {
-        return;
-      }
-
-      const totalSqMeters = polygonsRef.current.reduce((sum, polygon) => {
-        return sum + googleApi.maps.geometry.spherical.computeArea(polygon.getPath());
-      }, 0);
-
-      const nextSqft = Math.round(totalSqMeters * SQ_METERS_TO_SQFT);
-      const polygonPaths = serializePolygons();
-
-      onAreaChangeRef.current(nextSqft);
-      onPolygonsChangeRef.current(polygonPaths);
-      persistSqft(nextSqft);
-
-      if (!mountedRef.current) {
-        return;
-      }
-
-      setPolygonCount(polygonPaths.length);
-      setTotalSqft(nextSqft);
-
-      if (shouldPulse) {
-        setPillPulseKey((previous) => previous + 1);
-      }
-    },
-    [persistSqft, serializePolygons],
-  );
-
-  const removePolygon = useCallback(
-    (polygon: google.maps.Polygon, shouldRecalculate: boolean) => {
-      const polygonListeners = polygonListenersRef.current.get(polygon);
-      if (polygonListeners) {
-        polygonListeners.forEach((listener) => listener.remove());
-        polygonListenersRef.current.delete(polygon);
-      }
-
-      polygon.setMap(null);
-      polygonsRef.current = polygonsRef.current.filter((item) => item !== polygon);
-
-      if (shouldRecalculate) {
-        recalculateTotalArea(true);
-      }
-    },
-    [recalculateTotalArea],
-  );
+    if (mapRef.current.getTilt() !== 0) {
+      mapRef.current.setTilt(0);
+    }
+  }, []);
 
   const setPolygonDrawingMode = useCallback(() => {
     const drawingManager = drawingManagerRef.current;
@@ -159,13 +120,98 @@ export function MapDrawer({
     drawingManager.setDrawingMode(window.google.maps.drawing.OverlayType.POLYGON);
   }, []);
 
+  const clearResumeTimer = useCallback(() => {
+    if (resumeTimerRef.current) {
+      clearTimeout(resumeTimerRef.current);
+      resumeTimerRef.current = null;
+    }
+  }, []);
+
+  const pauseDrawingMode = useCallback(() => {
+    const drawingManager = drawingManagerRef.current;
+    if (!drawingManager) {
+      return;
+    }
+
+    drawingManager.setDrawingMode(null);
+  }, []);
+
+  const scheduleDrawingResume = useCallback(
+    (delayMs = 220) => {
+      clearResumeTimer();
+      resumeTimerRef.current = setTimeout(() => {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setPolygonDrawingMode();
+      }, delayMs);
+    },
+    [clearResumeTimer, setPolygonDrawingMode],
+  );
+
+  const syncAreaFromPolygons = useCallback(
+    (shouldPulse: boolean) => {
+      const googleApi = window.google;
+
+      if (!googleApi?.maps?.geometry) {
+        return;
+      }
+
+      const totalSqMeters = polygonsRef.current.reduce((sum, polygon) => {
+        return sum + googleApi.maps.geometry.spherical.computeArea(polygon.getPath());
+      }, 0);
+
+      const nextSqft = Math.max(0, Math.round(totalSqMeters * SQ_METERS_TO_SQFT));
+      const polygonPaths = serializePolygons();
+
+      onAreaChangeRef.current(nextSqft);
+      onPolygonsChangeRef.current(polygonPaths);
+      persistSqft(nextSqft);
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      setTotalSqft(nextSqft);
+      setPolygonCount(polygonPaths.length);
+
+      if (shouldPulse) {
+        setPillPulseKey((value) => value + 1);
+      }
+    },
+    [persistSqft, serializePolygons],
+  );
+
+  const detachPolygon = useCallback((polygon: google.maps.Polygon) => {
+    const listeners = polygonListenersRef.current.get(polygon);
+    if (listeners) {
+      listeners.forEach((listener) => listener.remove());
+      polygonListenersRef.current.delete(polygon);
+    }
+
+    polygon.setMap(null);
+    polygonsRef.current = polygonsRef.current.filter((item) => item !== polygon);
+  }, []);
+
+  const removePolygon = useCallback(
+    (polygon: google.maps.Polygon, shouldRecalculate: boolean) => {
+      detachPolygon(polygon);
+
+      if (shouldRecalculate) {
+        syncAreaFromPolygons(true);
+      }
+    },
+    [detachPolygon, syncAreaFromPolygons],
+  );
+
   const attachPolygon = useCallback(
     (polygon: google.maps.Polygon) => {
       const brandColor = getBrandColor();
 
       polygon.setOptions({
         fillColor: brandColor,
-        fillOpacity: 0.24,
+        fillOpacity: 0.22,
         strokeColor: brandColor,
         strokeWeight: 2,
         editable: true,
@@ -176,37 +222,33 @@ export function MapDrawer({
       polygonsRef.current.push(polygon);
 
       const path = polygon.getPath();
-      const listeners = [
-        path.addListener("insert_at", () => recalculateTotalArea(true)),
-        path.addListener("set_at", () => recalculateTotalArea(true)),
-        path.addListener("remove_at", () => recalculateTotalArea(true)),
+      const listeners: google.maps.MapsEventListener[] = [
+        path.addListener("insert_at", () => syncAreaFromPolygons(true)),
+        path.addListener("set_at", () => syncAreaFromPolygons(true)),
+        path.addListener("remove_at", () => syncAreaFromPolygons(true)),
+        polygon.addListener("mousedown", () => {
+          pauseDrawingMode();
+        }),
+        polygon.addListener("mouseup", () => {
+          scheduleDrawingResume(260);
+        }),
         polygon.addListener("rightclick", (event: google.maps.PolyMouseEvent) => {
           if (event.vertex === undefined) {
             removePolygon(polygon, true);
-            setPolygonDrawingMode();
+            scheduleDrawingResume(80);
           }
         }),
       ];
 
       polygonListenersRef.current.set(polygon, listeners);
-      recalculateTotalArea(true);
+      syncAreaFromPolygons(true);
     },
-    [getBrandColor, recalculateTotalArea, removePolygon, setPolygonDrawingMode],
+    [getBrandColor, pauseDrawingMode, removePolygon, scheduleDrawingResume, syncAreaFromPolygons],
   );
 
   const clearAllPolygons = useCallback(() => {
-    if (polygonsRef.current.length === 0) {
-      persistSqft(0);
-      onAreaChangeRef.current(0);
-      onPolygonsChangeRef.current([]);
-      setTotalSqft(0);
-      setPolygonCount(0);
-      setPolygonDrawingMode();
-      return;
-    }
-
-    const existing = [...polygonsRef.current];
-    existing.forEach((polygon) => removePolygon(polygon, false));
+    const existingPolygons = [...polygonsRef.current];
+    existingPolygons.forEach((polygon) => detachPolygon(polygon));
 
     onAreaChangeRef.current(0);
     onPolygonsChangeRef.current([]);
@@ -215,32 +257,31 @@ export function MapDrawer({
     if (mountedRef.current) {
       setTotalSqft(0);
       setPolygonCount(0);
-      setPillPulseKey((previous) => previous + 1);
+      setPillPulseKey((value) => value + 1);
     }
 
-    setPolygonDrawingMode();
-  }, [persistSqft, removePolygon, setPolygonDrawingMode]);
-
-  const handleDeleteLastShape = useCallback(() => {
-    const lastPolygon = polygonsRef.current[polygonsRef.current.length - 1];
-
-    if (!lastPolygon) {
-      return;
-    }
-
-    removePolygon(lastPolygon, true);
-    setPolygonDrawingMode();
-  }, [removePolygon, setPolygonDrawingMode]);
+    scheduleDrawingResume(0);
+  }, [detachPolygon, persistSqft, scheduleDrawingResume]);
 
   const handleStartOver = useCallback(() => {
     clearAllPolygons();
 
     if (typeof window !== "undefined") {
-      sessionStorage.removeItem("gl_final_quote");
+      sessionStorage.removeItem(FINAL_QUOTE_STORAGE_KEY);
     }
 
     onStartOverRef.current();
   }, [clearAllPolygons]);
+
+  const handleDeleteLastShape = useCallback(() => {
+    const last = polygonsRef.current[polygonsRef.current.length - 1];
+    if (!last) {
+      return;
+    }
+
+    removePolygon(last, true);
+    scheduleDrawingResume(80);
+  }, [removePolygon, scheduleDrawingResume]);
 
   useEffect(() => {
     if (initializedRef.current || !mapContainerRef.current) {
@@ -273,16 +314,18 @@ export function MapDrawer({
           tilt: 0,
         });
 
-        map.setTilt(0);
-
         mapRef.current = map;
         geocoderRef.current = new googleApi.maps.Geocoder();
 
-        globalListenersRef.current.push(
+        mapListenersRef.current.push(
           map.addListener("tilt_changed", () => {
-            if (map.getTilt() !== 0) {
-              map.setTilt(0);
-            }
+            enforceFlatMap();
+          }),
+        );
+
+        mapListenersRef.current.push(
+          map.addListener("maptypeid_changed", () => {
+            enforceFlatMap();
           }),
         );
 
@@ -291,7 +334,7 @@ export function MapDrawer({
           drawingMode: googleApi.maps.drawing.OverlayType.POLYGON,
           polygonOptions: {
             fillColor: getBrandColor(),
-            fillOpacity: 0.24,
+            fillOpacity: 0.22,
             strokeColor: getBrandColor(),
             strokeWeight: 2,
             clickable: true,
@@ -303,31 +346,37 @@ export function MapDrawer({
         drawingManager.setMap(map);
         drawingManagerRef.current = drawingManager;
 
-        globalListenersRef.current.push(
+        mapListenersRef.current.push(
           googleApi.maps.event.addListener(drawingManager, "overlaycomplete", (event: google.maps.drawing.OverlayCompleteEvent) => {
             if (event.type !== googleApi.maps.drawing.OverlayType.POLYGON) {
               return;
             }
 
+            pauseDrawingMode();
             attachPolygon(event.overlay as google.maps.Polygon);
-            setPolygonDrawingMode();
+            scheduleDrawingResume(220);
           }),
         );
 
-        initialPolygonsRef.current.forEach((polygonPath) => {
-          const polygon = new googleApi.maps.Polygon({
-            paths: polygonPath,
-            map,
+        if (initialPolygonsRef.current.length > 0) {
+          initialPolygonsRef.current.forEach((path) => {
+            const polygon = new googleApi.maps.Polygon({
+              paths: path,
+              map,
+            });
+
+            attachPolygon(polygon);
           });
-
-          attachPolygon(polygon);
-        });
-
-        if (initialPolygonsRef.current.length === 0) {
-          persistSqft(initialSqftRef.current);
+        } else {
+          onAreaChangeRef.current(0);
+          onPolygonsChangeRef.current([]);
+          persistSqft(0);
+          setTotalSqft(0);
+          setPolygonCount(0);
         }
 
-        setPolygonDrawingMode();
+        scheduleDrawingResume(0);
+        enforceFlatMap();
         setLoading(false);
       } catch (errorValue) {
         if (!cancelled) {
@@ -338,16 +387,16 @@ export function MapDrawer({
     }
 
     void initializeMap();
-
-    const globalListeners = globalListenersRef.current;
+    const mapListeners = mapListenersRef.current;
     const polygonListenersMap = polygonListenersRef.current;
     const polygons = polygonsRef.current;
 
     return () => {
       cancelled = true;
+      clearResumeTimer();
 
-      globalListeners.forEach((listener) => listener.remove());
-      globalListenersRef.current = [];
+      mapListeners.forEach((listener) => listener.remove());
+      mapListenersRef.current = [];
 
       polygonListenersMap.forEach((listeners) => {
         listeners.forEach((listener) => listener.remove());
@@ -364,7 +413,7 @@ export function MapDrawer({
       geocoderRef.current = null;
       initializedRef.current = false;
     };
-  }, [attachPolygon, getBrandColor, persistSqft, setPolygonDrawingMode]);
+  }, [attachPolygon, clearResumeTimer, enforceFlatMap, getBrandColor, pauseDrawingMode, persistSqft, scheduleDrawingResume]);
 
   useEffect(() => {
     if (!address || !mapRef.current || !geocoderRef.current) {
@@ -377,21 +426,23 @@ export function MapDrawer({
       }
 
       mapRef.current.setCenter(results[0].geometry.location);
-      mapRef.current.setTilt(0);
+      enforceFlatMap();
     });
-  }, [address]);
+  }, [address, enforceFlatMap]);
 
-  const switchMapType = (nextType: "satellite" | "roadmap") => {
-    setMapType(nextType);
+  const switchMapType = useCallback(
+    (nextType: "satellite" | "roadmap") => {
+      setMapType(nextType);
 
-    const map = mapRef.current;
-    if (!map) {
-      return;
-    }
+      if (!mapRef.current) {
+        return;
+      }
 
-    map.setMapTypeId(nextType === "satellite" ? google.maps.MapTypeId.SATELLITE : google.maps.MapTypeId.ROADMAP);
-    map.setTilt(0);
-  };
+      mapRef.current.setMapTypeId(nextType === "satellite" ? google.maps.MapTypeId.SATELLITE : google.maps.MapTypeId.ROADMAP);
+      enforceFlatMap();
+    },
+    [enforceFlatMap],
+  );
 
   const formattedArea = new Intl.NumberFormat("en-US").format(totalSqft);
 
@@ -416,22 +467,13 @@ export function MapDrawer({
           >
             Start Over
           </button>
-          <button
-            aria-label="Delete last shape"
-            className="min-h-11 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={polygonCount === 0}
-            onClick={handleDeleteLastShape}
-            type="button"
-          >
-            Delete Last Shape
-          </button>
         </div>
 
-        <div className="flex gap-2 md:justify-end">
+        <div className="ml-auto flex gap-2">
           <button
             aria-label="Show satellite map"
-            className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-              mapType === "satellite" ? "bg-brand text-white" : "bg-slate-200 text-slate-700"
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
+              mapType === "satellite" ? "bg-brand text-white shadow" : "bg-slate-200 text-slate-700 hover:bg-slate-300"
             }`}
             onClick={() => switchMapType("satellite")}
             type="button"
@@ -440,8 +482,8 @@ export function MapDrawer({
           </button>
           <button
             aria-label="Show map view"
-            className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-              mapType === "roadmap" ? "bg-brand text-white" : "bg-slate-200 text-slate-700"
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition sm:text-sm ${
+              mapType === "roadmap" ? "bg-brand text-white shadow" : "bg-slate-200 text-slate-700 hover:bg-slate-300"
             }`}
             onClick={() => switchMapType("roadmap")}
             type="button"
@@ -462,15 +504,28 @@ export function MapDrawer({
           </div>
         </div>
 
-        <div ref={mapContainerRef} className="map-canvas h-[58vh] min-h-[360px] md:h-[62vh] md:min-h-[560px]" aria-label="Map drawing canvas" />
+        <div ref={mapContainerRef} aria-label="Map drawing canvas" className="map-canvas h-[58vh] min-h-[360px] md:h-[62vh] md:min-h-[560px]" />
 
         {loading && (
-          <div className="absolute inset-0 z-30 grid place-items-center bg-white/75 text-sm font-semibold text-slate-700">Loading map...</div>
+          <div className="absolute inset-0 z-30 grid place-items-center bg-white/70 text-sm font-semibold text-slate-700">Loading map...</div>
         )}
       </div>
 
+      {polygonCount > 0 && (
+        <div className="md:hidden">
+          <button
+            aria-label="Delete last shape"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
+            onClick={handleDeleteLastShape}
+            type="button"
+          >
+            Delete last shape
+          </button>
+        </div>
+      )}
+
       {error && <p className="text-sm text-rose-700">{error}</p>}
-      <p className="text-xs text-slate-600">Right-click a polygon to delete it on desktop, or use &quot;Delete Last Shape&quot; on touch devices.</p>
+      <p className="text-xs text-slate-600">Right-click a polygon to remove it. On mobile, use the subtle delete button shown below the map.</p>
     </section>
   );
 }

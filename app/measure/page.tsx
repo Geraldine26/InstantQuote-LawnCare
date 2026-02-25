@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { MapDrawer } from "@/components/MapDrawer";
@@ -10,6 +10,11 @@ import { useTenantRouting } from "@/src/components/TenantProvider";
 
 const TOTAL_SQFT_STORAGE_KEY = "gl_quote_total_sqft";
 const FINAL_QUOTE_STORAGE_KEY = "gl_final_quote";
+const MEASURE_ADDRESS_STORAGE_KEY = "gl_measure_address";
+
+function normalizeAddress(value: string) {
+  return value.trim().toLowerCase();
+}
 
 export default function MeasurePage() {
   const router = useRouter();
@@ -25,6 +30,9 @@ export default function MeasurePage() {
     setPolygons: state.setPolygons,
   }));
 
+  const processedAddressRef = useRef<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+
   useEffect(() => {
     if (!address) {
       router.replace(withTenantPath("/"));
@@ -32,19 +40,50 @@ export default function MeasurePage() {
   }, [address, router, withTenantPath]);
 
   useEffect(() => {
+    if (typeof window === "undefined" || !address) {
+      return;
+    }
+
+    const normalizedAddress = normalizeAddress(address);
+
+    if (processedAddressRef.current === normalizedAddress) {
+      setMapReady(true);
+      return;
+    }
+
+    processedAddressRef.current = normalizedAddress;
+
+    const previousAddress = sessionStorage.getItem(MEASURE_ADDRESS_STORAGE_KEY);
+    const isNewAddress = !previousAddress || previousAddress !== normalizedAddress;
+
+    if (isNewAddress) {
+      setPolygons([]);
+      setSqft(0);
+      sessionStorage.setItem(TOTAL_SQFT_STORAGE_KEY, "0");
+      sessionStorage.removeItem(FINAL_QUOTE_STORAGE_KEY);
+    }
+
+    sessionStorage.setItem(MEASURE_ADDRESS_STORAGE_KEY, normalizedAddress);
+    setMapReady(true);
+  }, [address, setPolygons, setSqft]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    sessionStorage.setItem(TOTAL_SQFT_STORAGE_KEY, String(Math.max(0, Math.round(sqft))));
-  }, [sqft]);
+    const nextSqft = polygons.length > 0 ? Math.max(0, Math.round(sqft)) : 0;
+    sessionStorage.setItem(TOTAL_SQFT_STORAGE_KEY, String(nextSqft));
+  }, [polygons.length, sqft]);
 
-  if (!address) {
+  if (!address || !mapReady) {
     return null;
   }
 
+  const effectiveSqft = polygons.length > 0 ? sqft : 0;
+
   const handleGetPriceNow = () => {
-    const quote = calculateQuote(sqft, selectedServices, mowingFrequency);
+    const quote = calculateQuote(effectiveSqft, selectedServices, mowingFrequency);
 
     const details = quote.lineItems
       .map((item) => (item.frequency ? `${item.label} (${item.frequency === "weekly" ? "Weekly" : "Biweekly"})` : item.label))
@@ -54,12 +93,12 @@ export default function MeasurePage() {
       details,
       total: formatCurrency(quote.total),
       address,
-      area: `${new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(sqft)))} sqft`,
+      area: `${new Intl.NumberFormat("en-US").format(Math.max(0, Math.round(effectiveSqft)))} sqft`,
       date: new Date().toISOString(),
     };
 
     if (typeof window !== "undefined") {
-      sessionStorage.setItem(TOTAL_SQFT_STORAGE_KEY, String(Math.max(0, Math.round(sqft))));
+      sessionStorage.setItem(TOTAL_SQFT_STORAGE_KEY, String(Math.max(0, Math.round(effectiveSqft))));
       sessionStorage.setItem(FINAL_QUOTE_STORAGE_KEY, JSON.stringify(finalQuote));
     }
 
@@ -81,10 +120,11 @@ export default function MeasurePage() {
       </header>
 
       <MapDrawer
+        key={normalizeAddress(address)}
         address={address}
         initialCenter={center}
         initialPolygons={polygons}
-        initialSqft={sqft}
+        initialSqft={effectiveSqft}
         onAreaChange={setSqft}
         onPolygonsChange={setPolygons}
         onGetPriceNow={handleGetPriceNow}

@@ -12,15 +12,28 @@ export default function LandingPage() {
   const router = useRouter();
   const tenant = useTenant();
   const { withTenantPath } = useTenantRouting();
-  const { address, selectedServices, setAddress, setCenter, toggleService } = useQuoteStore((state) => ({
+  const { address, selectedServices, setAddress, setCenter, setPolygons, setSqft, toggleService } = useQuoteStore((state) => ({
     address: state.address,
     selectedServices: state.selectedServices,
     setAddress: state.setAddress,
     setCenter: state.setCenter,
+    setPolygons: state.setPolygons,
+    setSqft: state.setSqft,
     toggleService: state.toggleService,
   }));
 
   const [error, setError] = useState<string | null>(null);
+
+  const resetMeasurement = () => {
+    setPolygons([]);
+    setSqft(0);
+
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("gl_quote_total_sqft", "0");
+      sessionStorage.removeItem("gl_final_quote");
+      sessionStorage.removeItem("gl_measure_address");
+    }
+  };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -51,10 +64,16 @@ export default function LandingPage() {
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <AddressAutocomplete
             onChange={(nextAddress) => {
+              if (nextAddress.trim() !== address.trim()) {
+                resetMeasurement();
+              }
               setAddress(nextAddress);
               setError(null);
             }}
             onSelect={({ address: selectedAddress, center }) => {
+              if (selectedAddress.trim() !== address.trim()) {
+                resetMeasurement();
+              }
               setAddress(selectedAddress);
               setCenter(center);
               setError(null);
