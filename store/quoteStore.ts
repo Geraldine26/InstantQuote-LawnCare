@@ -120,7 +120,7 @@ export const useQuoteStore = create<QuoteState>()(
     }),
     {
       name: "instant-quote-store",
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       migrate: (persistedState) => {
         const state = persistedState as Partial<QuoteState> | undefined;
@@ -128,14 +128,14 @@ export const useQuoteStore = create<QuoteState>()(
         return {
           ...initialState,
           ...state,
+          address: "",
+          center: null,
+          polygons: [],
+          sqft: 0,
           selectedServices: normalizePersistedServices(state?.selectedServices),
         };
       },
       partialize: (state) => ({
-        address: state.address,
-        center: state.center,
-        polygons: state.polygons,
-        sqft: state.sqft,
         selectedServices: state.selectedServices,
         mowingFrequency: state.mowingFrequency,
         lead: state.lead,
