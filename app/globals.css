@@ -41,6 +41,16 @@ button:disabled {
   height: 100%;
 }
 
+.map-touch-container {
+  touch-action: none;
+}
+
+@media (max-width: 767px) {
+  .map-touch-container {
+    min-height: 520px;
+  }
+}
+
 @keyframes area-pill-pulse {
   0% {
     transform: scale(1);

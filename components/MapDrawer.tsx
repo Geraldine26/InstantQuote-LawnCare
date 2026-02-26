@@ -21,6 +21,134 @@ interface MapDrawerProps {
   onStartOver: () => void;
 }
 
+interface VertexHandleOptions {
+  map: google.maps.Map;
+  poly: google.maps.Polygon;
+  onChange: () => void;
+  onInteractionStart: () => void;
+  color: string;
+  size?: number;
+}
+
+function makeDotIcon(size: number, color: string): google.maps.Symbol {
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    scale: Math.max(6, size / 2),
+    fillColor: color,
+    fillOpacity: 1,
+    strokeColor: "#ffffff",
+    strokeWeight: 2,
+  };
+}
+
+function attachPathListeners(poly: google.maps.Polygon, onChange: () => void) {
+  const path = poly.getPath();
+
+  const listeners: google.maps.MapsEventListener[] = [
+    path.addListener("set_at", onChange),
+    path.addListener("insert_at", onChange),
+    path.addListener("remove_at", onChange),
+  ];
+
+  return () => {
+    listeners.forEach((listener) => listener.remove());
+  };
+}
+
+function buildVertexHandles({ map, poly, onChange, onInteractionStart, color, size = 28 }: VertexHandleOptions) {
+  const path = poly.getPath();
+
+  let markers: google.maps.Marker[] = [];
+  let markerListeners: google.maps.MapsEventListener[] = [];
+
+  const clearMarkers = () => {
+    markerListeners.forEach((listener) => listener.remove());
+    markerListeners = [];
+
+    markers.forEach((marker) => marker.setMap(null));
+    markers = [];
+  };
+
+  const rebuildMarkers = () => {
+    clearMarkers();
+
+    for (let index = 0; index < path.getLength(); index += 1) {
+      const marker = new google.maps.Marker({
+        map,
+        position: path.getAt(index),
+        draggable: true,
+        optimized: false,
+        zIndex: 3000,
+        icon: makeDotIcon(size, color),
+      });
+
+      markerListeners.push(
+        marker.addListener("dragstart", () => {
+          onInteractionStart();
+        }),
+      );
+
+      markerListeners.push(
+        marker.addListener("drag", () => {
+          onInteractionStart();
+          const nextPosition = marker.getPosition();
+
+          if (nextPosition) {
+            path.setAt(index, nextPosition);
+          }
+        }),
+      );
+
+      markerListeners.push(
+        marker.addListener("dragend", () => {
+          const nextPosition = marker.getPosition();
+
+          if (nextPosition) {
+            path.setAt(index, nextPosition);
+          }
+
+          onChange();
+        }),
+      );
+
+      markers.push(marker);
+    }
+  };
+
+  rebuildMarkers();
+
+  const pathSyncListeners: google.maps.MapsEventListener[] = [
+    path.addListener("set_at", (index: number) => {
+      const marker = markers[index];
+      const nextPosition = path.getAt(index);
+
+      if (!marker || !nextPosition) {
+        rebuildMarkers();
+        return;
+      }
+
+      marker.setPosition(nextPosition);
+    }),
+    path.addListener("insert_at", () => {
+      rebuildMarkers();
+    }),
+    path.addListener("remove_at", () => {
+      rebuildMarkers();
+    }),
+  ];
+
+  return () => {
+    pathSyncListeners.forEach((listener) => listener.remove());
+    clearMarkers();
+  };
+}
+
+interface PolygonBindings {
+  cleanupPath: () => void;
+  cleanupHandles: () => void;
+  listeners: google.maps.MapsEventListener[];
+}
+
 export function MapDrawer({
   address,
   initialCenter,
@@ -36,13 +164,13 @@ export function MapDrawer({
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const drawingManagerRef = useRef<google.maps.drawing.DrawingManager | null>(null);
   const polygonsRef = useRef<google.maps.Polygon[]>([]);
+  const polygonBindingsRef = useRef<Map<google.maps.Polygon, PolygonBindings>>(new Map());
 
-  const polygonListenersRef = useRef<Map<google.maps.Polygon, google.maps.MapsEventListener[]>>(new Map());
   const mapListenersRef = useRef<google.maps.MapsEventListener[]>([]);
-
   const initializedRef = useRef(false);
   const mountedRef = useRef(false);
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bodyOverflowRef = useRef<string | null>(null);
 
   const drawingEnabledRef = useRef(false);
   const pendingVerticesRef = useRef(0);
@@ -106,11 +234,8 @@ export function MapDrawer({
 
   const enforceFlatMap = useCallback(() => {
     const map = mapRef.current;
-    if (!map) {
-      return;
-    }
 
-    if (map.getTilt() !== 0) {
+    if (map && map.getTilt() !== 0) {
       map.setTilt(0);
     }
   }, []);
@@ -124,6 +249,7 @@ export function MapDrawer({
 
   const disableDrawingMode = useCallback(() => {
     const drawingManager = drawingManagerRef.current;
+
     if (!drawingManager) {
       return;
     }
@@ -134,6 +260,7 @@ export function MapDrawer({
 
   const enableDrawingMode = useCallback(() => {
     const drawingManager = drawingManagerRef.current;
+
     if (!drawingManager || !window.google?.maps?.drawing) {
       return;
     }
@@ -148,15 +275,11 @@ export function MapDrawer({
   }, []);
 
   const scheduleAutoResumeDrawing = useCallback(
-    (delayMs = 180) => {
+    (delayMs = 200) => {
       clearResumeTimer();
 
       resumeTimerRef.current = setTimeout(() => {
-        if (!mountedRef.current) {
-          return;
-        }
-
-        if (interactionSinceOverlayRef.current) {
+        if (!mountedRef.current || interactionSinceOverlayRef.current) {
           return;
         }
 
@@ -166,8 +289,8 @@ export function MapDrawer({
     [clearResumeTimer, enableDrawingMode],
   );
 
-  const syncAreaFromPolygons = useCallback(
-    (shouldPulse: boolean) => {
+  const recalcSqftAndUpdateUI = useCallback(
+    () => {
       const googleApi = window.google;
 
       if (!googleApi?.maps?.geometry) {
@@ -190,45 +313,49 @@ export function MapDrawer({
       }
 
       setTotalSqft(nextSqft);
-
-      if (shouldPulse) {
-        setPillPulseKey((value) => value + 1);
-      }
+      setPillPulseKey((value) => value + 1);
     },
     [persistSqft, serializePolygons],
   );
 
-  const detachPolygon = useCallback((polygon: google.maps.Polygon) => {
-    const listeners = polygonListenersRef.current.get(polygon);
+  const unregisterPolygon = useCallback(
+    (polygon: google.maps.Polygon, shouldRecalc: boolean) => {
+      const bindings = polygonBindingsRef.current.get(polygon);
 
-    if (listeners) {
-      listeners.forEach((listener) => listener.remove());
-      polygonListenersRef.current.delete(polygon);
-    }
+      if (bindings) {
+        bindings.cleanupPath();
+        bindings.cleanupHandles();
+        bindings.listeners.forEach((listener) => listener.remove());
+        polygonBindingsRef.current.delete(polygon);
+      }
 
-    polygon.setMap(null);
-    polygonsRef.current = polygonsRef.current.filter((item) => item !== polygon);
-  }, []);
+      polygon.setMap(null);
+      polygonsRef.current = polygonsRef.current.filter((item) => item !== polygon);
 
-  const removePolygon = useCallback(
-    (polygon: google.maps.Polygon, shouldRecalculate: boolean) => {
-      detachPolygon(polygon);
-
-      if (shouldRecalculate) {
-        syncAreaFromPolygons(true);
+      if (shouldRecalc) {
+        recalcSqftAndUpdateUI();
       }
     },
-    [detachPolygon, syncAreaFromPolygons],
+    [recalcSqftAndUpdateUI],
   );
 
   const markEditingInteraction = useCallback(() => {
     interactionSinceOverlayRef.current = true;
     clearResumeTimer();
-    disableDrawingMode();
+
+    if (drawingEnabledRef.current) {
+      disableDrawingMode();
+    }
   }, [clearResumeTimer, disableDrawingMode]);
 
-  const attachPolygon = useCallback(
+  const registerPolygon = useCallback(
     (polygon: google.maps.Polygon) => {
+      const map = mapRef.current;
+
+      if (!map) {
+        return;
+      }
+
       const brandColor = getBrandColor();
 
       polygon.setOptions({
@@ -241,50 +368,51 @@ export function MapDrawer({
         clickable: true,
       });
 
-      // Edición inmediata al cerrar.
+      // Se asegura edición inmediata al finalizar el dibujo.
       polygon.setEditable(true);
       polygon.setOptions({ clickable: true });
 
       polygonsRef.current.push(polygon);
 
-      const path = polygon.getPath();
+      const cleanupPath = attachPathListeners(polygon, () => {
+        recalcSqftAndUpdateUI();
+      });
+
+      const cleanupHandles = buildVertexHandles({
+        map,
+        poly: polygon,
+        onChange: () => {
+          recalcSqftAndUpdateUI();
+        },
+        onInteractionStart: markEditingInteraction,
+        color: brandColor,
+        size: 28,
+      });
+
       const listeners: google.maps.MapsEventListener[] = [
-        path.addListener("insert_at", () => {
-          markEditingInteraction();
-          syncAreaFromPolygons(true);
-        }),
-        path.addListener("set_at", () => {
-          markEditingInteraction();
-          syncAreaFromPolygons(true);
-        }),
-        path.addListener("remove_at", () => {
-          markEditingInteraction();
-          syncAreaFromPolygons(true);
-        }),
-        polygon.addListener("mousedown", () => {
-          markEditingInteraction();
-        }),
-        polygon.addListener("click", () => {
-          markEditingInteraction();
-        }),
+        polygon.addListener("mousedown", markEditingInteraction),
+        polygon.addListener("click", markEditingInteraction),
         polygon.addListener("rightclick", (event: google.maps.PolyMouseEvent) => {
           if (event.vertex === undefined) {
-            removePolygon(polygon, true);
-            interactionSinceOverlayRef.current = false;
-            scheduleAutoResumeDrawing(160);
+            unregisterPolygon(polygon, true);
           }
         }),
       ];
 
-      polygonListenersRef.current.set(polygon, listeners);
-      syncAreaFromPolygons(true);
+      polygonBindingsRef.current.set(polygon, {
+        cleanupPath,
+        cleanupHandles,
+        listeners,
+      });
+
+      recalcSqftAndUpdateUI();
     },
-    [getBrandColor, markEditingInteraction, removePolygon, scheduleAutoResumeDrawing, syncAreaFromPolygons],
+    [getBrandColor, markEditingInteraction, recalcSqftAndUpdateUI, unregisterPolygon],
   );
 
   const clearAllPolygons = useCallback(() => {
-    const existingPolygons = [...polygonsRef.current];
-    existingPolygons.forEach((polygon) => detachPolygon(polygon));
+    const existing = [...polygonsRef.current];
+    existing.forEach((polygon) => unregisterPolygon(polygon, false));
 
     onAreaChangeRef.current(0);
     onPolygonsChangeRef.current([]);
@@ -298,7 +426,7 @@ export function MapDrawer({
 
     interactionSinceOverlayRef.current = false;
     enableDrawingMode();
-  }, [detachPolygon, enableDrawingMode, persistSqft]);
+  }, [enableDrawingMode, persistSqft, unregisterPolygon]);
 
   const handleStartOver = useCallback(() => {
     clearAllPolygons();
@@ -309,6 +437,43 @@ export function MapDrawer({
 
     onStartOverRef.current();
   }, [clearAllPolygons]);
+
+  useEffect(() => {
+    const mapContainer = mapContainerRef.current;
+
+    if (!mapContainer || typeof document === "undefined") {
+      return;
+    }
+
+    const lockBodyScroll = () => {
+      if (bodyOverflowRef.current !== null) {
+        return;
+      }
+
+      bodyOverflowRef.current = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+    };
+
+    const unlockBodyScroll = () => {
+      if (bodyOverflowRef.current === null) {
+        return;
+      }
+
+      document.body.style.overflow = bodyOverflowRef.current;
+      bodyOverflowRef.current = null;
+    };
+
+    mapContainer.addEventListener("touchstart", lockBodyScroll, { passive: true });
+    mapContainer.addEventListener("touchend", unlockBodyScroll, { passive: true });
+    mapContainer.addEventListener("touchcancel", unlockBodyScroll, { passive: true });
+
+    return () => {
+      mapContainer.removeEventListener("touchstart", lockBodyScroll);
+      mapContainer.removeEventListener("touchend", unlockBodyScroll);
+      mapContainer.removeEventListener("touchcancel", unlockBodyScroll);
+      unlockBodyScroll();
+    };
+  }, []);
 
   useEffect(() => {
     if (initializedRef.current || !mapContainerRef.current) {
@@ -338,6 +503,7 @@ export function MapDrawer({
           fullscreenControl: false,
           streetViewControl: false,
           rotateControl: false,
+          clickableIcons: false,
           gestureHandling: "greedy",
           tilt: 0,
         });
@@ -361,13 +527,15 @@ export function MapDrawer({
           map.addListener("click", () => {
             if (drawingEnabledRef.current) {
               pendingVerticesRef.current += 1;
+
               if (pendingVerticesRef.current >= 2 && mountedRef.current) {
                 setShowCloseHint(true);
               }
+
               return;
             }
 
-            // Tap al mapa vacío para volver a dibujar otra forma.
+            // Se reactiva dibujo al tocar mapa vacío cuando no se está dibujando.
             interactionSinceOverlayRef.current = false;
             enableDrawingMode();
           }),
@@ -397,29 +565,38 @@ export function MapDrawer({
               return;
             }
 
-            interactionSinceOverlayRef.current = false;
-            disableDrawingMode();
-
             const polygon = event.overlay as google.maps.Polygon;
+
+            // Se respeta la secuencia base: cerrar shape, pausar dibujo, editar.
             polygon.setEditable(true);
             polygon.setOptions({ clickable: true });
 
-            attachPolygon(polygon);
-            scheduleAutoResumeDrawing(180);
+            drawingManager.setDrawingMode(null);
+            drawingEnabledRef.current = false;
+
+            pendingVerticesRef.current = 0;
+            interactionSinceOverlayRef.current = false;
+
+            if (mountedRef.current) {
+              setShowCloseHint(false);
+            }
+
+            registerPolygon(polygon);
+            scheduleAutoResumeDrawing(200);
           }),
         );
 
         if (initialPolygonsRef.current.length > 0) {
-          initialPolygonsRef.current.forEach((path) => {
+          initialPolygonsRef.current.forEach((polygonPath) => {
             const polygon = new googleApi.maps.Polygon({
-              paths: path,
+              paths: polygonPath,
               map,
               editable: true,
               clickable: true,
               strokeWeight: 3,
             });
 
-            attachPolygon(polygon);
+            registerPolygon(polygon);
           });
         } else {
           onAreaChangeRef.current(0);
@@ -442,8 +619,6 @@ export function MapDrawer({
     void initializeMap();
 
     const mapListeners = mapListenersRef.current;
-    const polygonListenersMap = polygonListenersRef.current;
-    const polygons = polygonsRef.current;
 
     return () => {
       cancelled = true;
@@ -452,13 +627,8 @@ export function MapDrawer({
       mapListeners.forEach((listener) => listener.remove());
       mapListenersRef.current = [];
 
-      polygonListenersMap.forEach((listeners) => {
-        listeners.forEach((listener) => listener.remove());
-      });
-      polygonListenersMap.clear();
-
-      polygons.forEach((polygon) => polygon.setMap(null));
-      polygonsRef.current = [];
+      const existing = [...polygonsRef.current];
+      existing.forEach((polygon) => unregisterPolygon(polygon, false));
 
       drawingManagerRef.current?.setMap(null);
       drawingManagerRef.current = null;
@@ -467,18 +637,18 @@ export function MapDrawer({
       geocoderRef.current = null;
       initializedRef.current = false;
       drawingEnabledRef.current = false;
-      pendingVerticesRef.current = 0;
       interactionSinceOverlayRef.current = false;
+      pendingVerticesRef.current = 0;
     };
   }, [
-    attachPolygon,
     clearResumeTimer,
-    disableDrawingMode,
     enableDrawingMode,
     enforceFlatMap,
     getBrandColor,
     persistSqft,
+    registerPolygon,
     scheduleAutoResumeDrawing,
+    unregisterPolygon,
   ]);
 
   useEffect(() => {
@@ -500,11 +670,12 @@ export function MapDrawer({
     (nextType: "satellite" | "roadmap") => {
       setMapType(nextType);
 
-      if (!mapRef.current) {
+      const map = mapRef.current;
+      if (!map) {
         return;
       }
 
-      mapRef.current.setMapTypeId(nextType === "satellite" ? google.maps.MapTypeId.SATELLITE : google.maps.MapTypeId.ROADMAP);
+      map.setMapTypeId(nextType === "satellite" ? google.maps.MapTypeId.SATELLITE : google.maps.MapTypeId.ROADMAP);
       enforceFlatMap();
     },
     [enforceFlatMap],
@@ -578,7 +749,11 @@ export function MapDrawer({
           </div>
         )}
 
-        <div ref={mapContainerRef} aria-label="Map drawing canvas" className="map-canvas h-[58vh] min-h-[360px] md:h-[62vh] md:min-h-[560px]" />
+        <div
+          ref={mapContainerRef}
+          aria-label="Map drawing canvas"
+          className="map-canvas map-touch-container h-[60vh] min-h-[520px] md:h-[62vh] md:min-h-[560px]"
+        />
 
         {loading && (
           <div className="absolute inset-0 z-30 grid place-items-center bg-white/70 text-sm font-semibold text-slate-700">Loading map...</div>
