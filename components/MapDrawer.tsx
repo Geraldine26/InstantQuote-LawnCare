@@ -74,6 +74,7 @@ export function MapDrawer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showCloseHint, setShowCloseHint] = useState(false);
+  const [closeHintText, setCloseHintText] = useState("Tap the first dot to close.");
   const [totalSqft, setTotalSqft] = useState(initialPolygons.length > 0 ? Math.max(0, Math.round(initialSqft)) : 0);
   const [pillPulseKey, setPillPulseKey] = useState(0);
 
@@ -153,6 +154,7 @@ export function MapDrawer({
 
     if (mountedRef.current) {
       setShowCloseHint(false);
+      setCloseHintText("Tap the first dot to close.");
     }
   }, []);
 
@@ -370,7 +372,19 @@ export function MapDrawer({
             if (drawingEnabledRef.current) {
               pendingVerticesRef.current += 1;
 
-              if (pendingVerticesRef.current >= 2 && mountedRef.current) {
+              if (!mountedRef.current) {
+                return;
+              }
+
+              if (pendingVerticesRef.current === 1) {
+                // Guía temprana al primer toque para que el cierre sea obvio.
+                setCloseHintText("First point set. Add two more points.");
+                setShowCloseHint(true);
+              } else if (pendingVerticesRef.current === 2) {
+                setCloseHintText("Great. Add one more point.");
+                setShowCloseHint(true);
+              } else if (pendingVerticesRef.current >= 3) {
+                setCloseHintText("Tap the first dot to close.");
                 setShowCloseHint(true);
               }
 
@@ -419,6 +433,7 @@ export function MapDrawer({
 
             if (mountedRef.current) {
               setShowCloseHint(false);
+              setCloseHintText("Tap the first dot to close.");
             }
 
             registerPolygon(polygon);
@@ -580,7 +595,7 @@ export function MapDrawer({
 
         {showCloseHint && (
           <div className="pointer-events-none absolute left-1/2 top-20 z-20 -translate-x-1/2">
-            <div className="rounded-full bg-slate-900/85 px-3 py-1.5 text-[11px] font-medium text-white shadow">Tap the first dot to close.</div>
+            <div className="rounded-full bg-slate-900/85 px-3 py-1.5 text-[11px] font-medium text-white shadow">{closeHintText}</div>
           </div>
         )}
 
