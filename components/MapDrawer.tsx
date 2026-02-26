@@ -23,6 +23,7 @@ interface MapDrawerProps {
 
 interface PolygonBindings {
   cleanupPath: () => void;
+  cleanupFirstVertex: () => void;
   listeners: google.maps.MapsEventListener[];
 }
 
@@ -37,6 +38,66 @@ function attachPathListeners(poly: google.maps.Polygon, onChange: () => void) {
 
   return () => {
     listeners.forEach((listener) => listener.remove());
+  };
+}
+
+function attachFirstVertexHighlight(poly: google.maps.Polygon, color: string) {
+  const map = poly.getMap() as google.maps.Map | null;
+  if (!map) {
+    return () => undefined;
+  }
+
+  const path = poly.getPath();
+  const marker = new google.maps.Marker({
+    map,
+    clickable: false,
+    draggable: false,
+    optimized: false,
+    zIndex: 2600,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 9,
+      fillColor: color,
+      fillOpacity: 1,
+      strokeColor: "#ffffff",
+      strokeWeight: 2.5,
+    },
+  });
+
+  const syncMarker = () => {
+    if (path.getLength() === 0) {
+      marker.setMap(null);
+      return;
+    }
+
+    if (!marker.getMap()) {
+      marker.setMap(map);
+    }
+
+    marker.setPosition(path.getAt(0));
+  };
+
+  syncMarker();
+
+  const listeners: google.maps.MapsEventListener[] = [
+    path.addListener("set_at", (index: number) => {
+      if (index === 0) {
+        syncMarker();
+      }
+    }),
+    path.addListener("insert_at", (index: number) => {
+      if (index === 0 || path.getLength() === 1) {
+        syncMarker();
+      }
+    }),
+    path.addListener("remove_at", () => {
+      syncMarker();
+    }),
+  ];
+
+  return () => {
+    listeners.forEach((listener) => listener.remove());
+    marker.setMap(null);
   };
 }
 
@@ -64,6 +125,7 @@ export function MapDrawer({
   const firstPointMarkerRef = useRef<google.maps.Marker | null>(null);
   const firstPointHintWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const firstPointHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasShownCloseHintRef = useRef(false);
 
   const drawingEnabledRef = useRef(false);
   const pendingVerticesRef = useRef(0);
@@ -178,13 +240,14 @@ export function MapDrawer({
         clickable: false,
         draggable: false,
         zIndex: 2500,
+        optimized: false,
         icon: {
           path: window.google.maps.SymbolPath.CIRCLE,
-          scale: 7,
-          fillColor: getBrandColor(),
+          scale: 10,
+          fillColor: "#f97316",
           fillOpacity: 1,
           strokeColor: "#ffffff",
-          strokeWeight: 2,
+          strokeWeight: 2.5,
         },
       });
 
@@ -210,9 +273,9 @@ export function MapDrawer({
         }
 
         firstPointHintTimerRef.current = null;
-      }, 2200);
+      }, 2500);
     },
-    [clearFirstPointAssist, getBrandColor],
+    [clearFirstPointAssist],
   );
 
   const enableDrawingMode = useCallback(() => {
@@ -259,6 +322,7 @@ export function MapDrawer({
 
       if (bindings) {
         bindings.cleanupPath();
+        bindings.cleanupFirstVertex();
         bindings.listeners.forEach((listener) => listener.remove());
         polygonBindingsRef.current.delete(polygon);
       }
@@ -303,6 +367,7 @@ export function MapDrawer({
         markEditingInteraction();
         recalcSqftAndUpdateUI();
       });
+      const cleanupFirstVertex = attachFirstVertexHighlight(polygon, "#f97316");
 
       const listeners: google.maps.MapsEventListener[] = [
         polygon.addListener("mousedown", markEditingInteraction),
@@ -316,6 +381,7 @@ export function MapDrawer({
 
       polygonBindingsRef.current.set(polygon, {
         cleanupPath,
+        cleanupFirstVertex,
         listeners,
       });
 
@@ -442,8 +508,9 @@ export function MapDrawer({
             if (drawingEnabledRef.current) {
               pendingVerticesRef.current += 1;
 
-              // Resalta el primer vértice para guiar el cierre.
-              if (pendingVerticesRef.current === 1 && event.latLng) {
+              // Muestra ayuda visual solo una vez para no saturar al usuario.
+              if (pendingVerticesRef.current === 1 && event.latLng && !hasShownCloseHintRef.current) {
+                hasShownCloseHintRef.current = true;
                 showFirstPointAssist(event.latLng);
               }
 
@@ -637,8 +704,6 @@ export function MapDrawer({
           </button>
         </div>
       </div>
-
-      <p className="text-xs font-medium text-slate-600">To finish a shape: tap the first point again.</p>
 
       <div className="relative overflow-hidden rounded-2xl border border-slate-300 bg-slate-100 shadow-soft">
         <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 md:left-4 md:translate-x-0">
