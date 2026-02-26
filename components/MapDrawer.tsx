@@ -61,6 +61,9 @@ export function MapDrawer({
   const initializedRef = useRef(false);
   const mountedRef = useRef(false);
   const bodyOverflowRef = useRef<string | null>(null);
+  const firstPointMarkerRef = useRef<google.maps.Marker | null>(null);
+  const firstPointHintWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const firstPointHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const drawingEnabledRef = useRef(false);
   const pendingVerticesRef = useRef(0);
@@ -73,8 +76,6 @@ export function MapDrawer({
   const [mapType, setMapType] = useState<"satellite" | "roadmap">("satellite");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showCloseHint, setShowCloseHint] = useState(false);
-  const [closeHintText, setCloseHintText] = useState("Tap the first dot to close.");
   const [totalSqft, setTotalSqft] = useState(initialPolygons.length > 0 ? Math.max(0, Math.round(initialSqft)) : 0);
   const [pillPulseKey, setPillPulseKey] = useState(0);
 
@@ -141,6 +142,79 @@ export function MapDrawer({
     drawingEnabledRef.current = false;
   }, []);
 
+  const clearFirstPointHint = useCallback(() => {
+    if (firstPointHintTimerRef.current) {
+      clearTimeout(firstPointHintTimerRef.current);
+      firstPointHintTimerRef.current = null;
+    }
+
+    if (firstPointHintWindowRef.current) {
+      firstPointHintWindowRef.current.close();
+      firstPointHintWindowRef.current = null;
+    }
+  }, []);
+
+  const clearFirstPointAssist = useCallback(() => {
+    clearFirstPointHint();
+
+    if (firstPointMarkerRef.current) {
+      firstPointMarkerRef.current.setMap(null);
+      firstPointMarkerRef.current = null;
+    }
+  }, [clearFirstPointHint]);
+
+  const showFirstPointAssist = useCallback(
+    (latLng: google.maps.LatLng) => {
+      const map = mapRef.current;
+      if (!map || !window.google?.maps) {
+        return;
+      }
+
+      clearFirstPointAssist();
+
+      const marker = new window.google.maps.Marker({
+        map,
+        position: latLng,
+        clickable: false,
+        draggable: false,
+        zIndex: 2500,
+        icon: {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          scale: 7,
+          fillColor: getBrandColor(),
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        },
+      });
+
+      firstPointMarkerRef.current = marker;
+
+      const infoWindow = new window.google.maps.InfoWindow({
+        content:
+          '<div style="padding:4px 8px;border-radius:999px;background:#0f172a;color:#fff;font-size:11px;font-weight:600;">Cierra aquí</div>',
+        disableAutoPan: true,
+      });
+
+      infoWindow.open({
+        map,
+        anchor: marker,
+        shouldFocus: false,
+      });
+
+      firstPointHintWindowRef.current = infoWindow;
+      firstPointHintTimerRef.current = setTimeout(() => {
+        if (firstPointHintWindowRef.current === infoWindow) {
+          infoWindow.close();
+          firstPointHintWindowRef.current = null;
+        }
+
+        firstPointHintTimerRef.current = null;
+      }, 2200);
+    },
+    [clearFirstPointAssist, getBrandColor],
+  );
+
   const enableDrawingMode = useCallback(() => {
     const drawingManager = drawingManagerRef.current;
 
@@ -151,11 +225,6 @@ export function MapDrawer({
     drawingManager.setDrawingMode(window.google.maps.drawing.OverlayType.POLYGON);
     drawingEnabledRef.current = true;
     pendingVerticesRef.current = 0;
-
-    if (mountedRef.current) {
-      setShowCloseHint(false);
-      setCloseHintText("Tap the first dot to close.");
-    }
   }, []);
 
   const recalcSqftAndUpdateUI = useCallback(() => {
@@ -259,6 +328,8 @@ export function MapDrawer({
     const existing = [...polygonsRef.current];
     existing.forEach((polygon) => unregisterPolygon(polygon, false));
 
+    pendingVerticesRef.current = 0;
+    clearFirstPointAssist();
     onAreaChangeRef.current(0);
     onPolygonsChangeRef.current([]);
     persistSqft(0);
@@ -266,11 +337,10 @@ export function MapDrawer({
     if (mountedRef.current) {
       setTotalSqft(0);
       setPillPulseKey((value) => value + 1);
-      setShowCloseHint(false);
     }
 
     enableDrawingMode();
-  }, [enableDrawingMode, persistSqft, unregisterPolygon]);
+  }, [clearFirstPointAssist, enableDrawingMode, persistSqft, unregisterPolygon]);
 
   const handleStartOver = useCallback(() => {
     clearAllPolygons();
@@ -368,24 +438,13 @@ export function MapDrawer({
         );
 
         mapListenersRef.current.push(
-          map.addListener("click", () => {
+          map.addListener("click", (event: google.maps.MapMouseEvent) => {
             if (drawingEnabledRef.current) {
               pendingVerticesRef.current += 1;
 
-              if (!mountedRef.current) {
-                return;
-              }
-
-              if (pendingVerticesRef.current === 1) {
-                // Guía temprana al primer toque para que el cierre sea obvio.
-                setCloseHintText("First point set. Add two more points.");
-                setShowCloseHint(true);
-              } else if (pendingVerticesRef.current === 2) {
-                setCloseHintText("Great. Add one more point.");
-                setShowCloseHint(true);
-              } else if (pendingVerticesRef.current >= 3) {
-                setCloseHintText("Tap the first dot to close.");
-                setShowCloseHint(true);
+              // Resalta el primer vértice para guiar el cierre.
+              if (pendingVerticesRef.current === 1 && event.latLng) {
+                showFirstPointAssist(event.latLng);
               }
 
               return;
@@ -430,11 +489,7 @@ export function MapDrawer({
             drawingEnabledRef.current = false;
 
             pendingVerticesRef.current = 0;
-
-            if (mountedRef.current) {
-              setShowCloseHint(false);
-              setCloseHintText("Tap the first dot to close.");
-            }
+            clearFirstPointAssist();
 
             registerPolygon(polygon);
           }),
@@ -479,6 +534,7 @@ export function MapDrawer({
 
       mapListeners.forEach((listener) => listener.remove());
       mapListenersRef.current = [];
+      clearFirstPointAssist();
 
       const existing = [...polygonsRef.current];
       existing.forEach((polygon) => unregisterPolygon(polygon, false));
@@ -493,11 +549,13 @@ export function MapDrawer({
       pendingVerticesRef.current = 0;
     };
   }, [
+    clearFirstPointAssist,
     enableDrawingMode,
     enforceFlatMap,
     getBrandColor,
     persistSqft,
     registerPolygon,
+    showFirstPointAssist,
     unregisterPolygon,
   ]);
 
@@ -592,12 +650,6 @@ export function MapDrawer({
             </div>
           </div>
         </div>
-
-        {showCloseHint && (
-          <div className="pointer-events-none absolute left-1/2 top-20 z-20 -translate-x-1/2">
-            <div className="rounded-full bg-slate-900/85 px-3 py-1.5 text-[11px] font-medium text-white shadow">{closeHintText}</div>
-          </div>
-        )}
 
         <div
           ref={mapContainerRef}
